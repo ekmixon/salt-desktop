@@ -6,14 +6,16 @@ postgres:
   # Set False to use distro packaged postgresql.
   # Set True to use upstream postgresql.org repo for YUM/APT/ZYPP
   use_upstream_repo: False
+        {%- if grains.os_family not in ('FreeBSD',) %}
   pkgs_extra:
     - postgresql-contrib
+        {%- endif %}
 
   #following is used by 'remove' states.
   upstream:
     purgeall: true
     releases: ['9.2', '9.3', '9.4', '9.5', '9.6', '10',]
-    
+
   #Debian alternatives priority incremental. 0 disables feature.
   linux:
     altpriority: {{ range(1, 9100000) | random }}
@@ -67,7 +69,7 @@ postgres:
   config_backup: ".backup@{{ salt['status.time']('%y-%m-%d_%H:%M:%S') }}"
   {%- endif %}
 
-  {%- if grains['init'] == 'unknown' %}
+  {%- if 'init' in grains and grains['init'] == 'unknown' %}
 
   # If Salt is unable to detect init system running in the scope of state run,
   # probably we are trying to bake a container/VM image with PostgreSQL.

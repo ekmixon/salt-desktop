@@ -6,7 +6,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,26 +20,28 @@
 # Overlay salter with any git repo. Extend Salter by exposing
 # your salt files in this directory structure:
 #
-#   - ./profiles/
-#   - ./configs/
-#   - ./scripts/
+#  - ./profiles/
+#  - ./configs/
+#  - ./scripts/
 #
 # Your content overlay Salter's directory hierarchy, extending
 # Salter's features and overriding default salt configuration.
 #
-##################################################################
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 # bash version must be modern
 RC=0
-declare -A your solution fork 2>/dev/null || RC=$?
+declare -A _ 2>/dev/null || RC=$?
 if (( RC > 0 )) && [ "$( uname )" = "Darwin" ]; then
     echo "[warning] your bash version is too old ..."
     # macos needs homebrew (unattended https://github.com/Homebrew/legacy-homebrew/issues/46779#issuecomment-162819088)
-    export USER=$( stat -f "%Su" /dev/console )
+    USER=$( stat -f "%Su" /dev/console )
+    export USER
     export HOMEBREW=/usr/local/bin/brew
     ${HOMEBREW} >/dev/null 2>&1
-    (( $? == 127 )) && su - ${USER} -c 'echo | /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"'
+    # shellcheck disable=SC2016
+    (( $? == 127 )) && su - "${USER}" -c 'echo | /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"'
     # macos needs modern bash
-    (( RC > 0 )) && (su - ${USER} -c "${HOMEBREW} install bash" || exit 12) && RC=0
+    (( RC > 0 )) && (su - "${USER}" -c "${HOMEBREW} install bash" || exit 12) && RC=0
 fi
 if (( RC > 0 )); then
     # linux needs modern bash
@@ -48,57 +50,64 @@ if (( RC > 0 )); then
 fi
 
 # merge unrelated repos
-git config user.email "not@important.com"                                   ##keep git happy
-git config user.name "not important"
-git init                                                                    ##forget our history
-git remote add salter https://github.com/noelmcloughlin/salter.git          ##overlay salter repo
-git pull salter master --allow-unrelated-histories -f >/dev/null || RC=$?   ##typically master branch
+# shellcheck disable=SC2230
+GIT="$( which git)"
+${GIT} config user.email "not@important.com"     # keep ${GIT} happy
+${GIT} config user.name "not important"
+${GIT} init                                      # forget our history
+${GIT} remote remove salter >/dev/null 2>&1
+${GIT} remote add salter https://github.com/noelmcloughlin/salter.git          # overlay salter repo
+${GIT} pull salter master --allow-unrelated-histories -f >/dev/null || RC=$?   # typically master branch
 # problem
 if (( RC > 0 )) && [ "$( uname )" = "Darwin" ]; then
-    ## macos issue https://stackoverflow.com/questions/15371925/how-to-check-if-command-line-tools-is-installed
+    # macos issue https://stackoverflow.com/questions/15371925/how-to-check-if-command-line-tools-is-installed
     /usr/bin/xcode-select -p 1>/dev/null && RC=$?
-    (( $RC > 0 )) && /usr/bin/xcode-select --install && RC=0
+    (( RC > 0 )) && /usr/bin/xcode-select --install && RC=0
 fi
 # no problem
 if (( RC == 0 )); then
-    FILE_ROOTS=/srv/salt && [ -d /usr/local/etc/salt/states ] && FILE_ROOTS=/usr/local/etc/salt/states
+    FILE_ROOTS=/srv/salt
+    [ -d /usr/local/etc/salt/states ] && FILE_ROOTS=/usr/local/etc/salt/states
+    [ -d /usr/local/srv/salt ] && FILE_ROOTS=/usr/local/srv/salt
     TARGET_DIR=${FILE_ROOTS}/namespaces/your
     mkdir -p ${TARGET_DIR}/contrib ${TARGET_DIR}/file_roots ${TARGET_DIR}/pillar_roots 2>/dev/null
 
-    cp -Rp ./scripts/* ${TARGET_DIR}/contrib/ 2>/dev/null                   ##Your contrib
-    cp -Rp ./profiles/* ${TARGET_DIR}/file_roots/ 2>/dev/null               ##Your profiles/highstatesa ..
-    cp -Rp ./configs/* ${TARGET_DIR}/pillar_roots/ 2>/dev/null              ##Your pillar data ..
-    rm -fr ./scripts ./profiles ./configs 2>/dev/null                       ##cleanup local dirs
-    git init                                                                ##forget what just happened
+    cp -Rp ./scripts/* ${TARGET_DIR}/contrib/ 2>/dev/null         # Your contrib
+    cp -Rp ./profiles/* ${TARGET_DIR}/file_roots/ 2>/dev/null     # Your profiles/highstatesa ..
+    cp -Rp ./configs/* ${TARGET_DIR}/pillar_roots/ 2>/dev/null    # Your pillar data ..
+    rm -fr ./scripts ./profiles ./configs 2>/dev/null             # cleanup local dirs
+    ${GIT} init                                                   # forget what just happened
 else
     # problem
     echo "Error - something is wrong - ensure your OS is uptodate (git 2.9 or later) and network is up"
     exit ${RC} 
 fi
 
-## Check for a contributed/custom salter.sh script
-[ -f /tmp/mysalter.sh ] && cp /tmp/mysalter.sh contrib/salter.sh                  ## developers?
-[ -f contrib/salter.sh ] && mv contrib/salter.sh salter.sh && chmod +x salter.sh  ## integrators?
+# Check for a contributed/custom salter.sh script
+[ -f /tmp/mysalter.sh ] && cp /tmp/mysalter.sh contrib/salter.sh
+[ -f contrib/salter.sh ] && mv contrib/salter.sh salter.sh && chmod +x salter.sh
  
-## modern bash plus salt-bootstrap plus additions
-./salter.sh bootstrap || exit 1
-./salter.sh add salter || exit 1
+# modern bash plus salt-bootstrap plus additions
+./salter.sh add bootstrap || (echo "add bootstrap failed" && exit 1)
+./salter.sh add salter || (echo "add salter failed" && exit 1)
+# shellcheck disable=SC2181
+if [ $? != 0 ]; then
+    exit 1
+fi
 
-## copy/overlay formulas found in ./formulas/ local directory
+# copy/overlay formulas found in ./formulas/ local directory
 SOURCE_DIR=formulas
 if [ -d "${SOURCE_DIR}" ]; then
     mkdir -p ${TARGET_DIR} 2>/dev/null
-    for formula in $( ls ./${SOURCE_DIR}/ 2>/dev/null | grep '\-formula' | awk -F'-' '{print $1}' )
+    # shellcheck disable=SC2012
+    for formula in $( ls "./${SOURCE_DIR}/*\-formula" 2>/dev/null | awk -F'-' '{print $1}' )
     do
         if [ -d "${SOURCE_DIR}/${formula}-formula/${formula}" ]; then
-            rm -fr ${TARGET_DIR}/${formula}-formula ${FILE_ROOTS}/${formula} 2>/dev/null               ##cleanup
-            mv ${SOURCE_DIR}/${formula}-formula ${TARGET_DIR}/                                         ##integrate
-            ln -s  ${TARGET_DIR}/${formula}-formula/${formula} ${FILE_ROOTS}/${formula} 2>/dev/null    ##symlink
+            # cleanup, integrate, symlink
+            rm -fr ${TARGET_DIR:?}/"${formula}"-formula ${FILE_ROOTS:?}/"${formula}" 2>/dev/null
+            mv "${SOURCE_DIR}/${formula}-formula" "${TARGET_DIR}/"
+            ln -s  "${TARGET_DIR}/${formula}-formula/${formula}" "${FILE_ROOTS}/${formula}" 2>/dev/null
         fi
     done
 fi
-
-## Check status/cleanup
-rm ./salter.sh 2>/dev/null
-echo "Salter script linked to /usr/local/bin/salter.sh"
 exit 0

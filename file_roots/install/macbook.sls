@@ -5,10 +5,8 @@ base:
 
     - users
     - postgres
-    
-    - sun-java
-    - sun-java.jce
 
+    - java
     - tomcat
     - tomcat.config
     - tomcat.native
@@ -34,3 +32,14 @@ base:
     - eclipse.developer
     - eclipse.plugins
 
+    - docker
+    - charles
+    - chrome
+    - gasmask
+    - vscode
+    - yed
+    - dbeaver
+    - node
+    - insomnia
+    - postman
+    - rectangle

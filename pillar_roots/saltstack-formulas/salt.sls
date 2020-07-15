@@ -5,23 +5,39 @@ salt:
       base:
             {%- if grains['kernel'] in ['FreeBSD', 'OpenBSD', 'NetBSD'] %}
         - /usr/local/etc/salt/states
+            {%- elif grains['kernel'] in ['Darwin',] %}
+        - /usr/local/srv/salt
             {%- else %}
         - /srv/salt
             {%- endif %}
     pillar_roots:
       base:
+            {%- if grains['kernel'] in ['FreeBSD', 'OpenBSD', 'NetBSD'] %}
+        - /usr/local/etc/salt/pillaar
+            {%- elif grains['kernel'] in ['Darwin',] %}
+        - /usr/local/srv/pillar
+            {%- else %}
         - /srv/pillar
+            {%- endif %}
   minion:
     file_roots:
       base:
             {%- if grains['kernel'] in ['FreeBSD', 'OpenBSD', 'NetBSD'] %}
         - /usr/local/etc/salt/states
+            {%- elif grains['kernel'] in ['Darwin',] %}
+        - /usr/local/srv/salt
             {%- else %}
         - /srv/salt
             {%- endif %}
     pillar_roots:
       base:
+            {%- if grains['kernel'] in ['FreeBSD', 'OpenBSD', 'NetBSD'] %}
+        - /usr/local/etc/salt/pillaar
+            {%- elif grains['kernel'] in ['Darwin',] %}
+        - /usr/local/srv/pillar
+            {%- else %}
         - /srv/pillar
+            {%- endif %}
   ssh_roster:
     controller1:
       host: {{ grains.ipv4[0] or grains.ipv6[1] }}
@@ -34,6 +50,8 @@ salt_formulas:
       baseurl: https://github.com/saltstack-formulas
          {%- if grains['kernel'] in ['FreeBSD', 'OpenBSD', 'NetBSD'] %}
       basedir: /usr/local/etc/salt/states/namespaces/saltstack-formulas
+            {%- elif grains['kernel'] in ['Darwin',] %}
+      basedir: /usr/local/srv/salt/namespaces/saltstack-formulas
          {%- else %}
       basedir: /srv/salt/namespaces/saltstack-formulas
          {%- endif %}
@@ -60,6 +78,7 @@ salt_formulas:
      - sqlplus-formula
      - sqldeveloper-formula
      - sun-java-formula
+     - java-formula
      - users-formula
      - kubernetes-formula
      - cloudfoundry-formula
