@@ -24,34 +24,52 @@
 #
 #-----------------------------------------------------------------------
 trap exit SIGINT SIGTERM
-[ "$(id -u)" != 0 ] && echo -e "\nRun script with sudo, exiting\n" && exit 1
+if [[ "$( uname )" == CYGWIN_NT* ]]; then
+    net session >/dev/null 2>&1
+    (( $? > 0 )) && echo -e "\nRun As Administrator, exiting\n" && exit 1
+else
+    [ "$(id -u)" != 0 ] && echo -e "\nRun with sudo, exiting\n" && exit 1
+fi
 
-SALT_VERSION='stable 3000'    ##go with latest stable release
+SALT_VERSION='stable 3002.1'
 RC=0
 ACTION=
 BASE=/srv
-BASE_ETC=/etc
+BASE_ETC=/etc/salt
 PY_VER=3
 STATEDIR=''
 USER=
+EXTENSION=''
+CHOCO=/cygdrive/c/ProgramData/chocolatey/bin/choco
+GIT=git
+HOMEBREW=/usr/local/bin/brew
 OSNAME=$(uname)
+POWERSHELL=/cygdrive/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe
 if [ "${OSNAME}" == "FreeBSD" ]; then
     # FreeBSD
     BASE=/usr/local/etc
-    BASE_ETC=/usr/local/etc
+    BASE_ETC=/usr/local/etc/salt
     STATEDIR=/states
     SUBDIR=/salt
-fi
-if [ "${OSNAME}" == "Darwin" ]; then
+elif [ "${OSNAME}" == "Darwin" ]; then
     BASE=/usr/local/srv
     USER=$( stat -f "%Su" /dev/console )
-    # homebrew unattended (https://github.com/Homebrew/legacy-homebrew/issues/46779#issuecomment-162819088)
+    # unattended (https://github.com/Homebrew/legacy-homebrew/issues/46779#issuecomment-162819088)
     HOMEBREW=/usr/local/bin/brew
     ${HOMEBREW} >/dev/null 2>&1
     # shellcheck disable=SC2016
     (( $? == 127 )) && su - "${USER}" -c 'echo | /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"'
+elif [[ "$( uname )" == CYGWIN_NT* ]]; then
+    GIT=/cygdrive/c/Program\ Files/Git/bin/git.exe
+    EXTENSION=.bat
+    BASE=/cygdrive/c/salt/srv
+    BASE_ETC=/cygdrive/c/salt/conf
+    if [ ! -x "${CHOCO}" ]; then
+        curl -o install.ps1 -L https://chocolatey.org/install.ps1
+        ${POWERSHELL} -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ./install.ps1"
+    fi
+    export PATH="${PATH}:/cygdrive/c/salt:c:\\salt"
 fi
-HOMEBREW=/usr/local/bin/brew
 PILLARFS=${BASE:-/srv}${SUBDIR}/pillar
 SALTFS=${BASE:-/srv}/salt${STATEDIR}
 SKIP_UNNECESSARY_CLONE=''
@@ -59,6 +77,7 @@ SKIP_UNNECESSARY_CLONE=''
 TERM_PS1=${PS1} && unset PS1
 PROFILE=
 DEBUGG=
+IGNORE=false
 
 # bash version must be modern
 declare -A your solution fork 2>/dev/null || RC=$?
@@ -92,6 +111,11 @@ pkg-query() {
 pkg-add() {
     PACKAGES=${@}
     case ${OSTYPE} in
+    cygwin)  for p in ${PACKAGES}; do
+                 ${CHOCO} install ${p} -y
+             done
+             ;;
+
     darwin*) for p in ${PACKAGES}; do
                  su - "${USER}" -c "${HOMEBREW} install ${p}"
                  su - "${USER}" -c "${HOMEBREW} unlink ${p} 2>/dev/null"
@@ -109,18 +133,23 @@ pkg-add() {
 
     linux*|freebsd*)
              if [ -f "/usr/bin/zypper" ]; then
-                 /usr/bin/zypper update -y || exit 1
-                 /usr/bin/zypper --non-interactive install ${PACKAGES} || exit 1
+                 /usr/bin/zypper update -y
+                 (( $? > 0 )) && [[ "${IGNORE}" == false ]] && exit 1
+                 /usr/bin/zypper --non-interactive install ${PACKAGES}
+                 (( $? > 0 )) && [[ "${IGNORE}" == false ]] && exit 1
              elif [ -f "/usr/bin/emerge" ]; then
                  /usr/bin/emerge --oneshot ${PACKAGES} || exit 1
              elif [ -f "/usr/bin/pacman" ]; then
                  [ -x '/usr/bin/pacman-mirrors' ] && /usr/bin/pacman-mirrors -g
+                 # /usr/bin/pacman-key --refresh-keys || true
+                 # /usr/bin/pacman -Sy archlinux-keyring || true
                  /usr/bin/pacman -Syyu --noconfirm
                  /usr/bin/pacman -S --noconfirm ${PACKAGES} || exit 1
              elif [ -f "/usr/bin/dnf" ]; then
                  /usr/bin/dnf install -y --best --allowerasing ${PACKAGES} || exit 1
              elif [ -f "/usr/bin/yum" ]; then
-                 /usr/bin/yum update -y || exit 1
+                 # centos/rhel has older package versions so allow newer upstream ones (skip-broken)
+                 /usr/bin/yum update -y --skip-broken || exit 1
                  /usr/bin/yum install -y ${PACKAGES} --skip-broken || exit 1
              elif [[ -f "/usr/bin/apt-get" ]]; then
                  /usr/bin/apt-get update --fix-missing -y || exit 1
@@ -140,10 +169,16 @@ pkg-update() {
     [ -z "${PACKAGES}" ] && return
 
     case ${OSTYPE} in
+    cygwin)  for p in ${PACKAGES}; do
+                 ${CHOCO} upgrade ${p} -y
+             done
+             ;;
+
     darwin*) for p in ${PACKAGES}; do
                  su - "${USER}" -c "${HOMEBREW} upgrade ${p}"
              done
              ;;
+
     linux*)  if [ -f "/usr/bin/zypper" ]; then
                  /usr/bin/zypper --non-interactive up "${PACKAGES}" || exit 1
              elif [ -f "/usr/bin/emerge" ]; then
@@ -152,8 +187,9 @@ pkg-update() {
                  /usr/bin/pacman -Syu --noconfirm "${PACKAGES}" || exit 1
              elif [ -f "/usr/bin/dnf" ]; then
                  /usr/bin/dnf upgrade -y --allowerasing "${PACKAGES}" || exit 1
+                 # centos/rhel has older package versions so allow newer upstream ones (skip-broken)
              elif [ -f "/usr/bin/yum" ]; then
-                 /usr/bin/yum update -y "${PACKAGES}" || exit 1
+                 /usr/bin/yum update -y "${PACKAGES}" --skip-broken || exit 1
              elif [[ -f "/usr/bin/apt-get" ]]; then
                  /usr/bin/apt-get upgrade -y "${PACKAGES}" || exit 1
              elif [[ -f "/usr/sbin/pkg" ]]; then
@@ -166,10 +202,16 @@ pkg-update() {
 pkg-remove() {
     PACKAGES=${*}
     case ${OSTYPE} in
+    cygwin)  for p in ${PACKAGES}; do
+                 ${CHOCO} uninstall ${p} -y
+             done
+             ;;
+
     darwin*) for p in ${PACKAGES}; do
                  su - "${USER}" -c "${HOMEBREW} uninstall ${p} --force"
              done
              ;;
+
     linux*|freebsd*)
              if [ -f "/usr/bin/zypper" ]; then
                  /usr/bin/zypper --non-interactive rm "${PACKAGES}" || exit 1
@@ -210,12 +252,12 @@ get-salt-master-hostname() {
 
 HEREDOC
     fi
-    if [[ -f "${BASE_ETC}/salt/minion" ]]; then
-        MASTER=$( grep '^\s*master\s*:\s*' ${BASE_ETC}/salt/minion | awk '{print $2}')
+    if [[ -f "${BASE_ETC}/minion" ]]; then
+        MASTER=$( grep '^\s*master\s*:\s*' ${BASE_ETC}/minion | awk '{print $2}')
         [[ -z "${solution[saltmaster]}" ]] && solution[saltmaster]=${MASTER}
     fi
     [[ -z "${solution[saltmaster]}" ]] && solution[saltmaster]=$( hostname )
-    salt-key -A --yes >/dev/null 2>&1
+    salt-key${EXTENSION} -A --yes >/dev/null 2>&1 || true
 }
 
 salt-bootstrap() {
@@ -230,8 +272,31 @@ salt-bootstrap() {
     PWD=$( pwd )
     export PWD
 
+    echo "Setup OS known good baseline ..."
     case "$OSTYPE" in
-    darwin*) echo "Setup Darwin known good baseline ..."
+    cygwin)  # WINDOWS #
+             curl -o bootstrap-salt.ps1 -L https://winbootstrap.saltstack.com
+             # shellcheck disable=SC2016
+             ${POWERSHELL} -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = 3072; iex ./bootstrap-salt.ps1"
+             for f in ${BASE_ETC}/minion ${BASE_ETC}/minion.d/f_defaults.conf ${BASE_ETC}/master.d/f_defaults.conf
+             do
+                 sed -i"bak" 's@#file_client: remote@file_client: local@' ${f} 2>/dev/null
+                 sed -i"bak" 's@^#file_roots:@file_roots:@' ${f} 2>/dev/null
+                 sed -i"bak" 's@^#pillar_roots:@pillar_roots:@' ${f} 2>/dev/null
+                 sed -i"bak" 's@#  base:@  base:@g' ${f} 2>/dev/null
+                 sed -i"bak" 's@#    - /srv/salt/@    - c:\\salt\\srv\\salt\\@' ${f} 2>/dev/null
+                 sed -i"bak" 's@#    - /srv/salt@    - c:\\salt\\srv\\salt@' ${f} 2>/dev/null
+                 sed -i"bak" 's@#    - /srv/pillar@    - c:\\salt\\srv\\pillar@' ${f} 2>/dev/null
+                 sed -i"bak" 's@#    - /srv/salt@    - c:\\salt@' ${f} 2>/dev/null
+                 sed -i"bak" 's@    - /srv/salt@    - c:\\salt\\srv\\salt@' ${f} 2>/dev/null
+             done
+             ## Try to make git available
+             which ${GIT} >/dev/null 2>&1
+             (( $? > 0 )) && ${CHOCO} install git -Y
+             export GIT=/cygdrive/c/Program\ Files/Git/bin/git.exe
+             ;;
+
+    darwin*) # MACOS #
              ### https://github.com/Homebrew/legacy-homebrew/issues/19670
              sudo chown -R "${USER}":admin /usr/local/*
              sudo chmod -R 0755 /usr/local/* /Library/Python/2.7/site-packages/pip* 2>/dev/null
@@ -239,6 +304,8 @@ salt-bootstrap() {
 
              ### https://stackoverflow.com/questions/34386527/symbol-not-found-pycodecinfo-getincrementaldecoder
              su - "${USER}" -c 'hash -r python' 2>/dev/null
+
+             ### https://github.com/ohmyzsh/ohmyzsh/issues/630#issuecomment-2433637 ###
 
              ### pip https://pip.pypa.io/en/stable
              su - "${USER}" -c "curl https://bootstrap.pypa.io/get-pip.py -o ${PWD}/get-pip.py"
@@ -291,16 +358,13 @@ salt-bootstrap() {
              if [ -f "/usr/bin/dnf" ]; then
                  pkg-add ${PACKAGES} 2>/dev/null
              elif [ -f "/usr/bin/yum" ]; then
-                 # centos/rhel have many old package versions so we allow newer upstream packages
+                 # centos/rhel has older package versions so allow newer upstream ones (skip-broken)
                  pkg-add ${PACKAGES} --skip-broken 2>/dev/null
              else
                  pkg-add ${PACKAGES} 2>/dev/null
              fi
              # shellcheck disable=SC2181
-             if (( $? > 0 )); then
-                echo "Failed to add packages"
-                exit 1
-             fi
+             (( $? > 0 )) && [[ "${IGNORE}" == false ]] && echo "Failed to add packages (or nothing to do)" && exit 1
              wget -O bootstrap_salt.sh https://bootstrap.saltstack.com || exit 10
              (sh bootstrap_salt.sh -F -x python3 ${SALT_VERSION} && rm -f bootstrap_salt.sh) || exit 10
              ;;
@@ -315,43 +379,47 @@ EOF
         ### Enforce python3
         rm /usr/bin/python 2>/dev/null; ln -s /usr/bin/python3 /usr/bin/python
     fi
-    ### salt-api (except arch/macos/freebsd)
-    [ ! -f "/etc/arch-release" ] && [ "${OSNAME}" != "Darwin" ] && [ "${OSNAME}" != "FreeBSD" ] && pkg-add salt-api
+    ### salt-api (except arch/macos/freebsd/cygwin)
+    [[ "$( uname )" != CYGWIN_NT* ]] && [ ! -f "/etc/arch-release" ] && pkg-add salt-api
 
     ### salt minion
-    [ ! -f "${BASE_ETC}/salt/minion" ] && echo "File ${BASE_ETC}/salt/minion not found" && exit 1
+    [ ! -f "${BASE_ETC}/minion" ] && echo "File ${BASE_ETC}/minion not found" && exit 1
     if [[ "${OSNAME}" == "FreeBSD" ]] || [[ "${OSNAME}" == "Darwin" ]]; then
-        sed -i"bak" "s@^\s*#*\s*master\s*: salt\s*\$@master: ${solution[saltmaster]}@" ${BASE_ETC}/salt/minion
+        sed -i"bak" "s@^\s*#*\s*master\s*: salt\s*\$@master: ${solution[saltmaster]}@" ${BASE_ETC}/minion
     else
-        sed -i "s@^\s*#*\s*master\s*: salt\s*\$@master: ${solution[saltmaster]}@" ${BASE_ETC}/salt/minion
+        sed -i "s@^\s*#*\s*master\s*: salt\s*\$@master: ${solution[saltmaster]}@" ${BASE_ETC}/minion
     fi
     ### salt services
-    (systemctl enable salt-api && systemctl start salt-api) 2>/dev/null || service start salt-api 2>/dev/null
-    (systemctl enable salt-master && systemctl start salt-master) 2>/dev/null || service start salt-master 2>/dev/null
-    (systemctl enable salt-minion && systemctl start salt-minion) 2>/dev/null || service start salt-minion 2>/dev/null
-    salt-key -A --yes >/dev/null 2>&1     ##accept pending registrations
+    if [[ "${OSTYPE}" == "linux-gnu" ]]; then
+        (systemctl enable salt-api && systemctl start salt-api) 2>/dev/null || service start salt-api 2>/dev/null
+        (systemctl enable salt-master && systemctl start salt-master) 2>/dev/null || service start salt-master 2>/dev/null
+        (systemctl enable salt-minion && systemctl start salt-minion) 2>/dev/null || service start salt-minion 2>/dev/null
+        salt-key${EXTENSION} -A --yes >/dev/null 2>&1 || true    ##accept pending registrations
 
-    if [ "$OSNAME" != "Darwin" ]; then
         ### reboot to activate a new linux kernel
         echo && KERNEL_VERSION=$( uname -r | awk -F. '{print $1"."$2"."$3"."$4"."$5}' )
         echo "kernel before: ${KERNEL_VERSION}"
-        if [ "${OSNAME}" == "FreeBSD" ]; then
-            echo "kernel after: $( /bin/freebsd-version -k 2>/dev/null )"
-        else
-            echo "kernel after: $( pkg-query linux 2>/dev/null )"
-        fi
+        echo "kernel after: $( pkg-query linux 2>/dev/null )"
         echo "Reboot if kernel was major-upgraded; if unsure reboot!"
     fi
     echo
 }
 
 setup-log() {
-    LOG=${1}
+    LOG=${1} && PROFILE=${2}
     mkdir -p "${solution[logdir]}" 2>/dev/null
-    salt-call --versions >> "${LOG}" 2>&1
+    salt-call${EXTENSION} --versions >> "${LOG}" 2>&1
     [ -f "${PILLARFS}/site.j2" ] && cat ${PILLARFS}/site.j2 >> "${LOG}" 2>&1
-    [ -n "${DEBUGG_ON}" ] && salt-call pillar.items --local >> "${LOG}" 2>&1 && echo >> "${LOG}" 2>&1
-    salt-call state.show_top --local | tee -a "${LOG}" 2>&1   ## slow with many pillar files = needs refactoring
+    [ -n "${DEBUGG_ON}" ] && salt-call${EXTENSION} pillar.items --local >> "${LOG}" 2>&1 && echo >> "${LOG}" 2>&1
+    salt-call${EXTENSION} state.show_top --local | tee -a "${LOG}" 2>&1   ## slow if many pillar files = refactor
+    echo
+    if [[ -f "/usr/bin/yum" ]] && [[ "${PROFILE}" == "salt" ]]; then
+        echo >> "${LOG}" 2>&1
+        echo "[RedHat] If kernel got upgraded during last activity I could hang"
+        echo "[RedHat] Solution is to kill this script, reboot into new kernel first."
+        echo ".. continuing .."
+        echo
+    fi 
     echo >> "${LOG}" 2>&1
     echo "run salt: this takes a while, please be patient ..."
 }
@@ -362,31 +430,42 @@ gitclone() {
     URI=${1} && ENTITY=${2} && REPO=${3} && ALIAS=${4} && SUBDIR=${5}
     echo "cloning ${REPO} from ${ENTITY} ..."
     rm -fr "${SALTFS}/namespaces/${ENTITY}/${REPO}" 2>/dev/null
-
     echo "${fork[solutions]}" | grep "${REPO}" >/dev/null 2>&1
+
+    MYPWD="$( pwd )"
+    cd "${SALTFS}/namespaces/${ENTITY}"
     # shellcheck disable=SC2181
     if (( $? == 0 )) && [[ -n "${fork[uri]}" ]] && [[ -n "${fork[entity]}" ]] && [[ -n "${fork[branch]}" ]]; then
         echo "... using fork: ${fork[entity]}, branch: ${fork[branch]}"
-        git clone "${fork[uri]}/${fork[entity]}/${REPO}" "${SALTFS}/namespaces/${ENTITY}/${REPO}" >/dev/null 2>&1
+        "${GIT}" clone "${fork[uri]}/${fork[entity]}/${REPO}" "${REPO}" >/dev/null 2>&1
         # shellcheck disable=SC2181
         if (( $? > 0 )); then
-            echo "git clone ${fork[uri]}/${fork[entity]}/${REPO} ${SALTFS}/namespaces/${ENTITY}/${REPO} failed"
+            echo "gitclone ${fork[uri]}/${fork[entity]}/${REPO} ${SALTFS}/namespaces/${ENTITY}/${REPO} failed"
             exit 1
         fi
-        cd "${SALTFS}/namespaces/${ENTITY}/${REPO}" || exit 22
-        git checkout "${fork[branch]}"
+        cd "${REPO}" || exit 22
+        "${GIT}" checkout "${fork[branch]}"
         # shellcheck disable=SC2181
-        (( $? > 0 )) && pwd && echo "git checkout ${fork[branch]} failed" && exit 1
+        (( $? > 0 )) && pwd && echo "gitclone checkout ${fork[branch]} failed" && exit 1
     else
-        git clone "${URI}/${ENTITY}/${REPO}" "${SALTFS}/namespaces/${ENTITY}/${REPO}" >/dev/null 2>&1 || exit 1
+        "${GIT}" clone "${URI}/${ENTITY}/${REPO}" "${REPO}" >/dev/null 2>&1 || exit 1
     fi
-    ## ensure symlink points to *this* correct namespace
+    cd ${MYPWD}
+
+    ## ensure repo is correct
     rm -f "${SALTFS:?}"/"${ALIAS:?}" 2>/dev/null  ## ensure symlink is current
-    echo && ln -s "${SALTFS}/namespaces/${ENTITY}/${REPO}/${SUBDIR}" "${SALTFS}/${ALIAS}" 2>/dev/null
+    echo
+    if [[ "${OSTYPE}" != 'cygwin' ]]; then
+        ## ensure symlink points to *this* correct namespace
+        ln -s "${SALTFS}/namespaces/${ENTITY}/${REPO}/${SUBDIR}" "${SALTFS}/${ALIAS}" 2>/dev/null
+    else
+        ## symlinks do not work on windows
+        cp -Rp "${SALTFS}/namespaces/${ENTITY}/${REPO}/${SUBDIR}" "${SALTFS}/${ALIAS}" 2>/dev/null
+    fi
 }
 
 highstate() {
-    (get-salt-master-hostname && [ -d "${solution[homedir]}" ]) || usage
+    [ -d "${solution[homedir]}" ] || usage
 
     ## prepare states
     ACTION=${1} && STATEDIR=${2} && PROFILE=${3}
@@ -404,12 +483,12 @@ highstate() {
         ### find/replace dummy usernames in pillar data ###
         case "$OSTYPE" in
         darwin*) grep -rl 'undefined_user' "${PILLARFS}" |xargs sed -i '' "s/undefined_user/${USER}/g" 2>/dev/null ;;
-        linux*)  grep -rl 'undefined_user' "${PILLARFS}" |xargs sed -i "s/undefined_user/${USER}/g" 2>/dev/null
+        *)  grep -rl 'undefined_user' "${PILLARFS}" |xargs sed -i "s/undefined_user/${USER}/g" 2>/dev/null
         esac
     fi
 
     ## prepare formulas
-    for formula in $( grep '^.* - ' ${SALTFS}/top.sls |awk '{print $2}' |cut -d'.' -f1 |uniq )
+    for formula in $( grep '^.* - ' ${SALTFS}/top.sls |awk '{print $2}' |cut -d'.' -f1 |uniq | sed 's/\r$//' )
     do
          ## adjust mismatched state/formula names
          case ${formula} in
@@ -424,8 +503,8 @@ highstate() {
 
     ## run states
     LOG="${solution[logdir]}/log.$( date '+%Y%m%d%H%M' )"
-    setup-log "${LOG}"
-    salt-call state.highstate --local "${DEBUGG_ON}" --retcode-passthrough saltenv=base  >> "${LOG}" 2>&1
+    setup-log "${LOG}" "${PROFILE}"
+    salt-call${EXTENSION} state.highstate --local "${DEBUGG_ON}" --retcode-passthrough saltenv=base  >> "${LOG}" 2>&1
     [ -f "${LOG}" ] && (tail -6 "${LOG}" | head -4) 2>/dev/null && echo See full log in [ "${LOG}" ]
     echo
     echo "/////////////////////////////////////////////////////////////////"
@@ -437,20 +516,25 @@ highstate() {
 
 usage() {
     echo "Example usage:"
-    echo "  salter add PROFILE..."
-    echo "  salter edit PROFILE..."
-    echo "  salter show PROFILE..."
-    echo "  salter remove PROFILE..."
+    echo "  salter add PROFILE... [OPTIONS]"
+    echo "  salter edit PROFILE... [OPTIONS]"
+    echo "  salter show PROFILE... [OPTIONS]"
+    echo "  salter remove PROFILE... [OPTIONS]"
     echo 1>&2
-    echo "Synopsis:"
+    echo "SYNOPSIS:"
     echo "  sudo $0 add PROFILE [ OPTIONS ] [ -u username ]" 1>&2
     echo "  sudo $0 add PROFILE [ OPTIONS ]" 1>&2
     echo "  sudo $0 remove PROFILE [ OPTIONS ]" 1>&2
     echo "  sudo $0 edit PROFILE [ OPTIONS ]" 1>&2
     echo "  sudo $0 show PROFILE [ OPTIONS ]" 1>&2
     echo 1>&2
-    echo "Profiles:" 1>&2
-    echo -e "  PROFILE\tAdd profile named PROFILE" 1>&2
+    echo "OPTIONS:"
+    echo "-e   PROFILE\tEdit profile named PROFILE" 1>&2
+    echo "-u   USER\tExisting user" 1>&2
+    echo "-i   IGNORE\tIgnore package manager failures" 1>&2
+    echo 1>&2
+    echo "PROFILES:" 1>&2
+    echo -e "  PROFILE\tEdit named PROFILE" 1>&2
     echo 1>&2
     if [ "${solution[alias]}" != "salter" ]; then
         echo 1>&2
@@ -557,7 +641,7 @@ salter-engine() {
 }
 
 cli-options() {
-    (( $# == 0 )) && usage
+    (( $# == 0 )) && echo -e "\nPass some arguments, exiting\n" && exit 1
     case ${1} in
     add|remove|edit|show)   ACTION="${1}" && shift ;;
     bootstrap)              ACTION=add ;;
@@ -569,9 +653,10 @@ cli-options() {
     PROFILE=$( echo "${1%%.*}" )
     shift   #check for options
 
-    while getopts ":i:l:u:" option; do
+    while getopts ":il:u:" option; do
         case "${option}" in
-        i)  PS1=TERM_PS1 ;;
+        i)  IGNORE=true ;;
+
         l)  case ${OPTARG} in
             'all'|'garbage'|'trace'|'debug'|'warning'|'error') DEBUGG="-l${OPTARG}" && set -xv
                ;;
@@ -599,9 +684,9 @@ cli-options() {
 
 developer-definitions() {
     fork['uri']="https://github.com"
-    fork['entity']="noelmcloughlin"
-    fork['branch']="latest"
-    fork['solutions']="sqldeveloper sqlplus java kubernetes"
+    fork['entity']=""
+    fork['branch']=""
+    fork['solutions']=""
 }
 
 solution-definitions() {
@@ -610,7 +695,7 @@ solution-definitions() {
     solution['entity']="saltstack-formulas"
     solution['repo']="salter"
     solution['alias']="salter"
-    solution['subdir']="./"
+    solution['subdir']=""
     solution['provider']="saltstack-formulas"
 
     ### derivatives
@@ -621,7 +706,7 @@ solution-definitions() {
 
     your['saltdir']="${SALTFS}/namespaces/your/file_roots"
     your['pillars']="${SALTFS}/namespaces/your/pillar_roots"
-    mkdir -p ${solution[saltdir]} ${solution[pillars]} ${your[saltdir]} ${your[pillars]} ${solution[logdir]} ${PILLARFS} ${BASE_ETC}/salt 2>/dev/null
+    mkdir -p ${solution[saltdir]} ${solution[pillars]} ${your[saltdir]} ${your[pillars]} ${solution[logdir]} ${PILLARFS} ${BASE_ETC} 2>/dev/null
 }
 
 custom-add() {
@@ -638,7 +723,7 @@ custom-postadd() {
     # SUSE/Deepsea/Ceph
     # shellcheck disable=SC2181,SC2153
     if (( $? == 0 )) && [[ "${1}" == "deepsea" ]]; then
-       salt-call --local grains.append deepsea default ${solution['saltmaster']}
+       salt-call${EXTENSION} --local grains.append deepsea default ${solution['saltmaster']}
        # shellcheck disable=SC2086
        cp "${solution['homedir']}/file_roots/add/deepsea_post.sls" "${SALTFS}/${STATES_DIR}/top.sls"
     fi

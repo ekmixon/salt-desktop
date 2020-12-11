@@ -1,0 +1,3 @@
+base:
+  '*':
+    - deepsea_post

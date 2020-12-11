@@ -1,3 +1,0 @@
-base:
-  '*':
-    - etcd.init

@@ -1,29 +1,31 @@
 =======
 Salter:
 =======
-A software meta profile manager for MacOS, FreeBSD, and Linux.
+A software meta profile manager for MacOS, Linux, Windows, and FreeBSD.
 
 .. contents:: **Table of Contents**
+
+We assume Salt is functional on MacOS (https://github.com/saltstack-formulas/salter/issues/75)
 
 Installation
 ============
 
-Paste this in a Terminal::
+Paste this in a Terminal (on Windows run ``cygwin-terminal``` As Administrator)::
 
-    curl -o salter.sh https://raw.githubusercontent.com/saltstack-formulas/salter/master/salter.sh && sudo bash salter.sh add bootstrap && sudo bash salter.sh add salter
+    curl -LO https://raw.githubusercontent.com/saltstack-formulas/salter/master/go.sh && bash go.sh
 
-User
-====
-The '-u username' option is never required on MacOS. On Linux, its required for "Developer-type" software (IDEs, etc). 
-When in doubt pass the '-u username' argument, when it makes sense.
+We assume Salt is functional on MacOS (https://github.com/saltstack-formulas/salter/issues/75)
 
 Usage Examples
 ==============
+
+On Linux the '-u username' option is mandatory for developer-type formulas (i.e. no daemon)::
 
 Add profiles::
 
     sudo salter add intelli -u vagrant
     sudo salter add apache
+    sudo salter add airflow
 
 Remove profile::
 
@@ -75,6 +77,7 @@ Saltstack Formulas Namespace
 
     sudo salter add accumulo
     sudo salter add aegir
+    sudo salter add airflow
     sudo salter add apache
     sudo salter add androidstudio
     sudo salter add appcode -u vagrant

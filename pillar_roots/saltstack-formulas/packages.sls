@@ -15,7 +15,9 @@ packages:
      {% if grains.os == 'Ubuntu' %}
       - unattended-upgrades
     held:
-        {%- if grains.osmajorrelease|int >= 18 %}
+        {%- if grains.osmajorrelease|int >= 20 %}
+      - xserver-xorg-core: '2:1.20*'
+        {%- elif grains.osmajorrelease|int >= 18 %}
       - xserver-xorg-core: '2:1.19*'
         {%- else %}
       - xserver-xorg-core: '2:1.18*'
@@ -38,12 +40,14 @@ packages:
       - update-motd
       - software-properties-common
          {# docker-formula #}
-      - python-pip
       - apt-transport-https
-      - python-apt
+      - python3-apt
+      - python3-pip
          {# citrix-linuxvda formula #}
      {% if grains.os == 'Ubuntu' %}
-        {%- if grains.osmajorrelease|int >= 18 %}
+        {%- if grains.osmajorrelease|int >= 20 %}
+      - libreadline8
+        {%- elif grains.osmajorrelease|int >= 18 %}
       - libreadline7
         {%- endif %}
       - ubuntu-desktop
@@ -60,13 +64,12 @@ packages:
       # sssd-libwbclient   #this may break wb
      {% if grains.os == 'Fedora' %}
       - lxde-common
-      - python2-dnf-plugin-versionlock
       - python3-dnf-plugin-versionlock
      {% else %}
       - yum-plugin-versionlock
      {% endif %}
           {# docker-formula #}
-      - python2-pip
+      - python3-pip
   {% elif grains.os_family == 'Suse' %}
       - lsb-release
       - vim
@@ -75,7 +78,7 @@ packages:
       - xorg-x11-server
       - lxde-common
          {# docker-formula #}
-      - python-pip
+      - python3-pip
   {% elif grains.os_family == 'Arch' %}
       - lsb-release
       - vim
@@ -85,7 +88,7 @@ packages:
       - subversion
       - psmisc
           {# docker-formula #}
-      - python2-pip
+      - python3-pip
   {% endif %}
   #    if grains.os != 'MacOS' 
   #snaps:
