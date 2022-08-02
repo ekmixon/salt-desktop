@@ -57,95 +57,98 @@ class TestApp(npyscreen.NPSApp, outdir='/srv/salt'):
         for item in self.selection:
 
             if item == self.maven:
-                select_list.append('maven')
-                select_list.append('maven.env')
+                select_list.extend(('maven', 'maven.env'))
             if item == self.postgres:
-                select_list.append('postgres')
-                select_list.append('postgres.server.image')
+                select_list.extend(('postgres', 'postgres.server.image'))
             if item == self.java:
                 select_list.append('java')
             if item == self.tomcat:
-                select_list.append('tomcat')
-                select_list.append('tomcat.config')
-                select_list.append('tomcat.native')
-                select_list.append('tomcat.manager')
+                select_list.extend(
+                    ('tomcat', 'tomcat.config', 'tomcat.native', 'tomcat.manager')
+                )
+
             if item == self.apache:
-                select_list.append('apache')
-                select_list.append('apache.config')
-                select_list.append('apache.certificates')
-                select_list.append('apache.mod_mpm')
-                select_list.append('apache.modules')
-                select_list.append('apache.mod_rewrite')
-                select_list.append('apache.mod_proxy')
-                select_list.append('apache.mod_proxy_http')
-                select_list.append('apache.mod_proxy_fcgi')
-                select_list.append('apache.mod_wsgi')
-                select_list.append('apache.mod_actions')
-                select_list.append('apache.mod_headers')
-                select_list.append('apache.mod_pagespeed')
-                select_list.append('apache.mod_perl2')
-                select_list.append('apache.mod_geoip')
-                select_list.append('apache.mod_php5')
-                select_list.append('apache.mod_cgi')
-                select_list.append('apache.mod_fcgid')
-                #select_list.append('apache.mod_fastcgi') not working feb2018
-                select_list.append('apache.mod_dav_svn')
-                select_list.append('apache.mod_security')
-                select_list.append('apache.mod_security.rules')
-                select_list.append('apache.mod_socache_shmcb')
-                select_list.append('apache.mod_ssl')
-                select_list.append('apache.mod_suexec')
-                select_list.append('apache.mod_vhost_alias')
-                select_list.append('apache.mod_remoteip')
-                select_list.append('apache.mod_xsendfile')
-                select_list.append('apache.own_default_vhost')
-                select_list.append('apache.no_default_vhost')
-                select_list.append('apache.vhosts.standard')
-                select_list.append('apache.manage_security')
+                select_list.extend(
+                    (
+                        'apache',
+                        'apache.config',
+                        'apache.certificates',
+                        'apache.mod_mpm',
+                        'apache.modules',
+                        'apache.mod_rewrite',
+                        'apache.mod_proxy',
+                        'apache.mod_proxy_http',
+                        'apache.mod_proxy_fcgi',
+                        'apache.mod_wsgi',
+                        'apache.mod_actions',
+                        'apache.mod_headers',
+                        'apache.mod_pagespeed',
+                        'apache.mod_perl2',
+                        'apache.mod_geoip',
+                        'apache.mod_php5',
+                        'apache.mod_cgi',
+                        'apache.mod_fcgid',
+                        'apache.mod_dav_svn',
+                        'apache.mod_security',
+                        'apache.mod_security.rules',
+                        'apache.mod_socache_shmcb',
+                        'apache.mod_ssl',
+                        'apache.mod_suexec',
+                        'apache.mod_vhost_alias',
+                        'apache.mod_remoteip',
+                        'apache.mod_xsendfile',
+                        'apache.own_default_vhost',
+                        'apache.no_default_vhost',
+                        'apache.vhosts.standard',
+                        'apache.manage_security',
+                    )
+                )
+
             if item == self.pycharm:
-                select_list.append('pycharm')
-                select_list.append('pycharm.linuxenv')
-                select_list.append('pycharm.developer')
+                select_list.extend(('pycharm', 'pycharm.linuxenv', 'pycharm.developer'))
             if item == self.intellij:
-                select_list.append('intellij')
-                select_list.append('intellij.linuxenv')
-                select_list.append('intellij.developer')
+                select_list.extend(('intellij', 'intellij.linuxenv', 'intellij.developer'))
             if item == self.eclipse:
-                select_list.append('eclipse')
-                select_list.append('eclipse.linuxenv')
-                select_list.append('eclipse.developer')
-                select_list.append('eclipse.plugins')
+                select_list.extend(
+                    (
+                        'eclipse',
+                        'eclipse.linuxenv',
+                        'eclipse.developer',
+                        'eclipse.plugins',
+                    )
+                )
+
             if item == self.sqlplus:
-                select_list.append('sqlplus')
-                select_list.append('sqlplus.linuxenv')
-                select_list.append('sqlplus.developer')
+                select_list.extend(('sqlplus', 'sqlplus.linuxenv', 'sqlplus.developer'))
             if item == self.sqldeveloper:
-                select_list.append('sqldeveloper')
-                select_list.append('sqldeveloper.linuxenv')
-                select_list.append('sqldeveloper.developer')
+                select_list.extend(
+                    (
+                        'sqldeveloper',
+                        'sqldeveloper.linuxenv',
+                        'sqldeveloper.developer',
+                    )
+                )
 
         if select_list:
-           #Assume users & packages are mandatory
-           select_list.insert(0, 'users')
-           select_list.insert(0, 'packages')
-           try:
-               f = open(self.dir + '/top.sls', 'w')
-               f.write("base:\n")
-               f.write("  '*':\n")
-               for ele in select_list:
-                   f.write("    - %s\n" % ele)
-           finally:
-               f.close()
+            #Assume users & packages are mandatory
+            select_list.insert(0, 'users')
+            select_list.insert(0, 'packages')
+            try:
+                f = open(f'{self.dir}/top.sls', 'w')
+                f.write("base:\n")
+                f.write("  '*':\n")
+                for ele in select_list:
+                    f.write("    - %s\n" % ele)
+            finally:
+                f.close()
         else:
-          print("No selection made.")
+            print("No selection made.")
 
 
 #### Run the select screen & handle interrupts
 if __name__ == "__main__":
     try:
-        outdir = '/srv/salt'
-        if len(sys.argv) > 1:
-            outdir = str(sys.argv[1])
+        outdir = str(sys.argv[1]) if len(sys.argv) > 1 else '/srv/salt'
         App = TestApp(outdir)
         App.run()
     except KeyboardInterrupt:
